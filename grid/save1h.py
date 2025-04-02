@@ -97,42 +97,54 @@ def live_trading_suggestions(timeframe="1h"):
     score = 0
     reasons = []
 
-    # 根据 RSI 判断
+    # 根据 RSI 判断（动态评分）
     if last_rsi < 30:
-        score += 1
-        reasons.append("RSI 低于 30，市场可能超卖（买入信号）")
+        rsi_score = max(1, 2 - last_rsi / 15)  # RSI 越低，得分越高
+        score += rsi_score
+        reasons.append(f"RSI 低于 30（{last_rsi:.2f}），市场可能超卖（+{rsi_score:.2f}）")
     elif last_rsi > 70:
-        score -= 1
-        reasons.append("RSI 高于 70，市场可能超买（卖出信号）")
+        rsi_score = max(1, (last_rsi - 70) / 15 + 1)  # RSI 越高，扣分越高
+        score -= rsi_score
+        reasons.append(f"RSI 高于 70（{last_rsi:.2f}），市场可能超买（-{rsi_score:.2f}）")
 
-    # 根据 MACD 判断
-    if last_macd > last_macd_signal:
-        score += 1.5  # 提高 MACD 的权重
-        reasons.append("MACD 高于信号线，市场有上升趋势")
-    elif last_macd < last_macd_signal:
-        score -= 1.5  # 提高 MACD 的权重
-        reasons.append("MACD 低于信号线，市场可能下跌")
+    # 根据 MACD 判断（动态评分）
+    macd_diff = last_macd - last_macd_signal
+    if macd_diff > 0:
+        macd_score = min(2, macd_diff * 2)  # 差距越大，分数越高
+        score += macd_score
+        reasons.append(f"MACD 高于信号线，市场上升趋势（+{macd_score:.2f}）")
+    elif macd_diff < 0:
+        macd_score = min(2, abs(macd_diff) * 2)
+        score -= macd_score
+        reasons.append(f"MACD 低于信号线，市场可能下跌（-{macd_score:.2f}）")
 
-    # 根据 SMA 判断
-    if last_sma_50 > last_sma_100:
-        score += 2
-        reasons.append("50均线上穿100均线，长期看涨")
-    elif last_sma_50 < last_sma_100:
-        score -= 2
-        reasons.append("50均线下穿100均线，长期看跌")
+    # 根据 SMA 判断（动态评分）
+    sma_diff = last_sma_50 - last_sma_100
+    if sma_diff > 0:
+        sma_score = min(2.5, max(0.5, sma_diff / last_sma_100 * 50))  # 50均线上穿100均线的幅度决定得分
+        score += sma_score
+        reasons.append(f"50均线上穿100均线（+{sma_score:.2f}）")
+    elif sma_diff < 0:
+        sma_score = min(2.5, max(0.5, abs(sma_diff) / last_sma_100 * 50))
+        score -= sma_score
+        reasons.append(f"50均线下穿100均线（-{sma_score:.2f}）")
 
-    # 布林带判断（增加权重）
-    if last_close >= last_bb_upper:
-        score -= 1.5  # 提高布林带的卖出信号权重
-        reasons.append("价格触及布林带上轨，市场可能超买（卖出信号）")
-    elif last_close <= last_bb_lower:
-        score += 1.5  # 提高布林带的买入信号权重
-        reasons.append("价格触及布林带下轨，市场可能超卖（买入信号）")
+    # 根据布林带判断（动态评分）
+    bb_upper_diff = last_close - last_bb_upper
+    bb_lower_diff = last_close - last_bb_lower
+    if bb_upper_diff >= 0:
+        bb_score = min(2.0, max(0.5, bb_upper_diff / last_bb_upper * 50))  # 远离上轨，卖出信号更强
+        score -= bb_score
+        reasons.append(f"价格触及布林带上轨，市场可能超买（-{bb_score:.2f}）")
+    elif bb_lower_diff <= 0:
+        bb_score = min(2.0, max(0.5, abs(bb_lower_diff) / last_bb_lower * 10))  # 远低于下轨，买入信号更强
+        score += bb_score
+        reasons.append(f"价格触及布林带下轨，市场可能超卖（+{bb_score:.2f}）")
 
     # 综合评分判断交易建议
-    if score >= 2:
+    if score >= 1.5:
         suggestion = "✅ 可能买入机会"
-    elif score <= -2:
+    elif score <= -1.5:
         suggestion = "❌ 可能卖出机会"
     else:
         suggestion = "🔍 持续观察"
